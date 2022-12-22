@@ -17,10 +17,6 @@ static ALLOC: mimalloc::MiMalloc = mimalloc::MiMalloc;
 fn setup(opt: &Opt) -> anyhow::Result<()> {
     let mut log_builder = env_logger::Builder::new();
     log_builder.parse_filters(&opt.log_level);
-    if opt.log_level == "info" {
-        // if we are in info we only allow the warn log_level for milli
-        log_builder.filter_module("milli", log::LevelFilter::Warn);
-    }
 
     log_builder.init();
 
