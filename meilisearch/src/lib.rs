@@ -189,6 +189,8 @@ pub fn setup_meilisearch(opt: &Opt) -> anyhow::Result<(Arc<IndexScheduler>, Auth
     Ok((index_scheduler, auth_controller))
 }
 
+pub const INDEX_SIZE: usize = 536_870_912_000; // 500 GiB
+
 /// Try to start the IndexScheduler and AuthController without checking the VERSION file or anything.
 fn open_or_create_database_unchecked(
     opt: &Opt,
@@ -207,7 +209,7 @@ fn open_or_create_database_unchecked(
             snapshots_path: opt.snapshot_dir.clone(),
             dumps_path: opt.dump_dir.clone(),
             task_db_size: opt.max_task_db_size.get_bytes() as usize,
-            index_size: opt.max_index_size.get_bytes() as usize,
+            index_size: INDEX_SIZE,
             indexer_config: (&opt.indexer_options).try_into()?,
             autobatching_enabled: !opt.scheduler_options.disable_auto_batching,
         })?)
