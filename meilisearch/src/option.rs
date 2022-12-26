@@ -28,7 +28,6 @@ const MEILI_MASTER_KEY: &str = "MEILI_MASTER_KEY";
 const MEILI_ENV: &str = "MEILI_ENV";
 #[cfg(all(not(debug_assertions), feature = "analytics"))]
 const MEILI_NO_ANALYTICS: &str = "MEILI_NO_ANALYTICS";
-const MEILI_MAX_TASK_DB_SIZE: &str = "MEILI_MAX_TASK_DB_SIZE";
 const MEILI_HTTP_PAYLOAD_SIZE_LIMIT: &str = "MEILI_HTTP_PAYLOAD_SIZE_LIMIT";
 const MEILI_SSL_CERT_PATH: &str = "MEILI_SSL_CERT_PATH";
 const MEILI_SSL_KEY_PATH: &str = "MEILI_SSL_KEY_PATH";
@@ -55,7 +54,6 @@ const DEFAULT_CONFIG_FILE_PATH: &str = "./config.toml";
 const DEFAULT_DB_PATH: &str = "./data.ms";
 const DEFAULT_HTTP_ADDR: &str = "localhost:7700";
 const DEFAULT_ENV: &str = "development";
-const DEFAULT_MAX_TASK_DB_SIZE: &str = "100 GiB";
 const DEFAULT_HTTP_PAYLOAD_SIZE_LIMIT: &str = "100 MB";
 const DEFAULT_SNAPSHOT_DIR: &str = "snapshots/";
 const DEFAULT_SNAPSHOT_INTERVAL_SEC: u64 = 86400;
@@ -99,12 +97,6 @@ pub struct Opt {
     #[serde(default)] // we can't send true
     #[clap(long, env = MEILI_NO_ANALYTICS)]
     pub no_analytics: bool,
-
-    /// Sets the maximum size of the task database. Value must be given in bytes or explicitly stating a
-    /// base unit (for instance: 107374182400, '107.7Gb', or '107374 Mb').
-    #[clap(long, env = MEILI_MAX_TASK_DB_SIZE, default_value_t = default_max_task_db_size())]
-    #[serde(default = "default_max_task_db_size")]
-    pub max_task_db_size: Byte,
 
     /// Sets the maximum size of accepted payloads. Value must be given in bytes or explicitly stating a
     /// base unit (for instance: 107374182400, '107.7Gb', or '107374 Mb').
@@ -300,7 +292,6 @@ impl Opt {
             http_addr,
             master_key,
             env,
-            max_task_db_size,
             http_payload_size_limit,
             ssl_cert_path,
             ssl_key_path,
@@ -338,7 +329,6 @@ impl Opt {
         {
             export_to_env_if_not_present(MEILI_NO_ANALYTICS, no_analytics.to_string());
         }
-        export_to_env_if_not_present(MEILI_MAX_TASK_DB_SIZE, max_task_db_size.to_string());
         export_to_env_if_not_present(
             MEILI_HTTP_PAYLOAD_SIZE_LIMIT,
             http_payload_size_limit.to_string(),
@@ -677,10 +667,6 @@ pub fn default_http_addr() -> String {
 
 fn default_env() -> String {
     DEFAULT_ENV.to_string()
-}
-
-fn default_max_task_db_size() -> Byte {
-    Byte::from_str(DEFAULT_MAX_TASK_DB_SIZE).unwrap()
 }
 
 fn default_http_payload_size_limit() -> Byte {

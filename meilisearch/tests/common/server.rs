@@ -188,7 +188,6 @@ pub fn default_settings(dir: impl AsRef<Path>) -> Opt {
         env: "development".to_owned(),
         #[cfg(all(not(debug_assertions), feature = "analytics"))]
         no_analytics: true,
-        max_task_db_size: Byte::from_unit(1.0, ByteUnit::GiB).unwrap(),
         http_payload_size_limit: Byte::from_unit(10.0, ByteUnit::MiB).unwrap(),
         snapshot_dir: ".".into(),
         indexer_options: IndexerOpts {
