@@ -189,6 +189,14 @@ pub fn setup_meilisearch(opt: &Opt) -> anyhow::Result<(Arc<IndexScheduler>, Auth
     Ok((index_scheduler, auth_controller))
 }
 
+// Each environment (index and task-db) is taking space in the virtual address space
+//
+// The size of the virtual address sapce is limited by OS. About 100TB for Linux, about 10TB for Windows.
+// As a result, we pick values that are adapted to each OS.
+
+#[cfg(target_os = "windows")]
+pub const INDEX_SIZE: usize = 214_748_364_800; // 200 GiB
+#[cfg(not(target_os = "windows"))]
 pub const INDEX_SIZE: usize = 536_870_912_000; // 500 GiB
 pub const TASK_DB_SIZE: usize = 10_737_418_240; // 10 GiB
 
