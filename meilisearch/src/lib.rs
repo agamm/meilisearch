@@ -172,8 +172,8 @@ pub fn setup_meilisearch(opt: &Opt) -> anyhow::Result<(Arc<IndexScheduler>, Auth
 
     // We create a loop in a thread that registers snapshotCreation tasks
     let index_scheduler = Arc::new(index_scheduler);
-    if opt.schedule_snapshot {
-        let snapshot_delay = Duration::from_secs(opt.snapshot_interval_sec);
+    if let Some(Some(snapshot_delay)) = opt.schedule_snapshot {
+        let snapshot_delay = Duration::from_secs(snapshot_delay);
         let index_scheduler = index_scheduler.clone();
         thread::Builder::new()
             .name(String::from("register-snapshot-tasks"))
