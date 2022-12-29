@@ -22,9 +22,13 @@ use std::thread;
 use std::time::Duration;
 
 use actix_cors::Cors;
+use actix_governor::{
+    GlobalKeyExtractor, Governor, GovernorConfigBuilder, KeyExtractor, PeerIpKeyExtractor,
+};
 use actix_http::body::MessageBody;
 use actix_web::dev::{ServiceFactory, ServiceResponse};
 use actix_web::error::JsonPayloadError;
+use actix_web::middleware::Condition;
 use actix_web::web::Data;
 use actix_web::{middleware, web, HttpRequest};
 use analytics::Analytics;
@@ -42,6 +46,7 @@ use meilisearch_types::tasks::KindWithContent;
 use meilisearch_types::versioning::{check_version_file, create_version_file};
 use meilisearch_types::{compression, milli, VERSION_FILE_NAME};
 pub use option::Opt;
+use option::RateLimiterConfig;
 
 use crate::error::MeilisearchHttpError;
 
@@ -78,6 +83,7 @@ pub fn create_app(
         InitError = (),
     >,
 > {
+    let rate_limiters = configure_rate_limiters(&opt.rate_limiter_options);
     let app = actix_web::App::new()
         .configure(|s| {
             configure_data(
@@ -88,7 +94,7 @@ pub fn create_app(
                 analytics.clone(),
             )
         })
-        .configure(routes::configure)
+        .configure(|cfg| routes::configure(cfg, rate_limiters))
         .configure(|s| dashboard(s, enable_dashboard));
     #[cfg(feature = "metrics")]
     let app = app.configure(|s| configure_metrics_route(s, opt.enable_metrics_route));
@@ -382,6 +388,105 @@ pub fn configure_data(
         .app_data(
             web::QueryConfig::default().error_handler(|err, _req| PayloadError::from(err).into()),
         );
+}
+
+#[derive(Clone, Copy)]
+pub struct ApiKeyExtractor;
+
+impl KeyExtractor for ApiKeyExtractor {
+    type Key = Option<String>;
+
+    type KeyExtractionError = actix_http::header::ToStrError;
+
+    fn extract(
+        &self,
+        req: &actix_web::dev::ServiceRequest,
+    ) -> Result<Self::Key, Self::KeyExtractionError> {
+        let key = req.headers().get("Authorization").map(|token| token.to_str()).transpose()?;
+        Ok(key.and_then(|token| token.strip_prefix("Bearer ")).map(|key| key.trim().to_owned()))
+    }
+}
+
+pub struct RateLimiter<K: KeyExtractor> {
+    enabled: bool,
+    governor: Governor<K>,
+}
+
+pub struct RateLimiters {
+    pub global: RateLimiter<GlobalKeyExtractor>,
+    pub ip: RateLimiter<PeerIpKeyExtractor>,
+    pub api_key: RateLimiter<ApiKeyExtractor>,
+}
+
+impl<K: KeyExtractor> RateLimiter<K> {
+    fn disabled(key_extractor: K) -> Self {
+        let governor = Governor::new(
+            &GovernorConfigBuilder::default()
+                .methods(vec![])
+                .key_extractor(key_extractor)
+                .finish()
+                .unwrap(),
+        );
+        Self { enabled: false, governor }
+    }
+
+    fn enabled(key_extractor: K, pool_size: u32, cooldown_ns: u64) -> Self {
+        let governor = Governor::new(
+            &GovernorConfigBuilder::default()
+                .key_extractor(key_extractor)
+                .burst_size(pool_size)
+                .per_nanosecond(cooldown_ns)
+                .use_headers()
+                .finish()
+                .unwrap(),
+        );
+        Self { enabled: true, governor }
+    }
+
+    /// Turns this into a middleware that is enabled only if the rate limiter was enabled.
+    pub fn into_middleware(self) -> Condition<Governor<K>> {
+        Condition::new(self.enabled, self.governor)
+    }
+}
+
+fn configure_rate_limiters(rate_limiter_options: &RateLimiterConfig) -> RateLimiters {
+    if rate_limiter_options.rate_limiting_disable_all {
+        return RateLimiters {
+            global: RateLimiter::disabled(GlobalKeyExtractor),
+            ip: RateLimiter::disabled(PeerIpKeyExtractor),
+            api_key: RateLimiter::disabled(ApiKeyExtractor),
+        };
+    }
+    let global = if rate_limiter_options.rate_limiting_disable_global {
+        RateLimiter::disabled(GlobalKeyExtractor)
+    } else {
+        RateLimiter::enabled(
+            GlobalKeyExtractor,
+            rate_limiter_options.rate_limiting_global_pool,
+            rate_limiter_options.rate_limiting_global_cooldown_ns,
+        )
+    };
+
+    let ip = if rate_limiter_options.rate_limiting_disable_ip {
+        RateLimiter::disabled(PeerIpKeyExtractor)
+    } else {
+        RateLimiter::enabled(
+            PeerIpKeyExtractor,
+            rate_limiter_options.rate_limiting_ip_pool,
+            rate_limiter_options.rate_limiting_ip_cooldown_ns,
+        )
+    };
+
+    let api_key = if rate_limiter_options.rate_limiting_disable_api_key {
+        RateLimiter::disabled(ApiKeyExtractor)
+    } else {
+        RateLimiter::enabled(
+            ApiKeyExtractor,
+            rate_limiter_options.rate_limiting_api_key_pool,
+            rate_limiter_options.rate_limiting_api_key_cooldown_ns,
+        )
+    };
+    RateLimiters { global, ip, api_key }
 }
 
 #[cfg(feature = "mini-dashboard")]
